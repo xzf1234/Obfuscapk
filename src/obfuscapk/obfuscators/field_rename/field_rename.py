@@ -21,6 +21,7 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
 
         self.max_fields_to_add = 0
         self.added_fields = 0
+        self.keyList = ['public', 'private','final','protect','static']
 
     def rename_field(self, field_name: str) -> str:
         field_md5 = util.get_string_md5(field_name)
@@ -72,8 +73,15 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
 
                     if field_match:
                         field_name = field_match.group("field_name")
+                        ig = False
+                        for x in self.keyList:
+                            if field_name in x:
+                                ig = True
+                                break
+
                         # Avoid sub-fields and user defined packages.
-                        if not ignore and "$" not in field_name:
+                        if not ignore and not ig and "$" not in field_name:
+
                             # Rename field declaration (usages of this field will be
                             # renamed later) and add some random fields.
                             line = line.replace(
@@ -83,7 +91,8 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                             out_file.write(line)
 
                             # Add random fields.
-                            if self.added_fields < self.max_fields_to_add:
+                            if self.added_fields < self.max_fields_to_add \
+                                    and line.count(':')==1:
                                 for _ in range(util.get_random_int(1, 4)):
                                     out_file.write("\n")
                                     out_file.write(
@@ -129,6 +138,14 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                         )
                         class_name = field_usage_match.group("field_object")
                         field_name = field_usage_match.group("field_name")
+                        ig = False
+                        for x in self.keyList:
+                            if field_name in x:
+                                ig = True
+                                break
+                        if ig:
+                            continue
+
                         if field in fields_to_rename and (
                             not class_name.startswith(("Landroid", "Ljava"))
                             or class_name in sdk_classes

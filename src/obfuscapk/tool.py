@@ -163,6 +163,7 @@ class Apktool(object):
             self.logger.info('Running build command "{0}"'.format(" ".join(build_cmd)))
             # A new line character is sent as input since newer versions of Apktool
             # have an interactive prompt on Windows where the user should press a key.
+            print(build_cmd)
             output = subprocess.check_output(
                 build_cmd, stderr=subprocess.STDOUT, input=b"\n"
             ).strip()
@@ -174,23 +175,43 @@ class Apktool(object):
                 raise subprocess.CalledProcessError(1, build_cmd, output)
 
             if not os.path.isfile(output_apk_path):
+                print('"{0}" was not built correctly. delete res/ folder and re-try again'.format(output_apk_path))
+                shutil.rmtree(os.path.join(source_dir_path, 'res/'))
+                output = subprocess.check_output(
+                    build_cmd, stderr=subprocess.STDOUT, input=b"\n"
+                ).strip()
+                if not os.path.isfile(output_apk_path):
+                    raise FileNotFoundError(
+                        '"{0}" was not built correctly. Apktool output:\n{1}'.format(
+                            output_apk_path, output.decode(errors="replace")
+                        )
+                    )
+            return output.decode(errors="replace")
+        except subprocess.CalledProcessError as e:
+            print('"{0}" was not built correctly. delete res/ folder and re-try again'.format(output_apk_path))
+            shutil.rmtree(os.path.join(source_dir_path, 'res/'))
+            output = subprocess.check_output(
+                build_cmd, stderr=subprocess.STDOUT, input=b"\n"
+            ).strip()
+            if not os.path.isfile(output_apk_path):
+                raise FileNotFoundError(
+                    '"{0}" was not built correctly. Apktool output:\n{1}'.format(
+                        output_apk_path, output.decode(errors="replace")
+                    )
+                )
+        except Exception as e:
+            print('"{0}" was not built correctly. delete res/ folder and re-try again'.format(output_apk_path))
+            shutil.rmtree(os.path.join(source_dir_path, 'res/'))
+            output = subprocess.check_output(
+                build_cmd, stderr=subprocess.STDOUT, input=b"\n"
+            ).strip()
+            if not os.path.isfile(output_apk_path):
                 raise FileNotFoundError(
                     '"{0}" was not built correctly. Apktool output:\n{1}'.format(
                         output_apk_path, output.decode(errors="replace")
                     )
                 )
 
-            return output.decode(errors="replace")
-        except subprocess.CalledProcessError as e:
-            self.logger.error(
-                "Error during build command: {0}".format(
-                    e.output.decode(errors="replace") if e.output else e
-                )
-            )
-            raise
-        except Exception as e:
-            self.logger.error("Error during building: {0}".format(e))
-            raise
 
 
 class Zipalign(object):

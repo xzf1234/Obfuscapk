@@ -3,6 +3,7 @@
 import logging
 import os
 import secrets
+import shutil
 import string
 from typing import List, Union
 
@@ -19,20 +20,22 @@ class Obfuscation(object):
     """
 
     def __init__(
-        self,
-        apk_path: str,
-        working_dir_path: str = None,
-        obfuscated_apk_path: str = None,
-        ignore_libs: bool = False,
-        interactive: bool = False,
-        virus_total_api_key: str = None,
-        keystore_file: str = None,
-        keystore_password: str = None,
-        key_alias: str = None,
-        key_password: str = None,
-        ignore_packages_file: str = None,
-        use_aapt2: bool = False,
+            self,
+            apk_path: str,
+            working_dir_path: str = None,
+            obfuscated_apk_path: str = None,
+            ignore_libs: bool = False,
+            interactive: bool = False,
+            virus_total_api_key: str = None,
+            keystore_file: str = None,
+            keystore_password: str = None,
+            key_alias: str = None,
+            key_password: str = None,
+            ignore_packages_file: str = None,
+            use_aapt2: bool = False,
+            mapping_file_path: str = None,
     ):
+        self.class_obj_map_origin = None
         self.logger = logging.getLogger(__name__)
 
         self.apk_path: str = apk_path
@@ -47,6 +50,7 @@ class Obfuscation(object):
         self.key_password: str = key_password
         self.ignore_packages_file: str = ignore_packages_file
         self.use_aapt2 = use_aapt2
+        self.method_size: int = 0
         if apk_path.endswith("aab"):
             self.is_bundle = True
         else:
@@ -86,6 +90,7 @@ class Obfuscation(object):
         self._smali_files: List[str] = []
         self._multidex_smali_files: List[List[str]] = []  # A list for each dex file.
         self._native_lib_files: List[str] = []
+        self.mapping_file_path: str = 'mapping.txt'
 
         # Check if the apk file to obfuscate is a valid file.
         if not os.path.isfile(self.apk_path):
@@ -137,6 +142,13 @@ class Obfuscation(object):
                 "No obfuscated apk path provided, the result will be saved "
                 'as "{0}"'.format(self.obfuscated_apk_path)
             )
+
+        # writing mapping information when performing rename obfuscation
+        if mapping_file_path:
+            self.mapping_file_path = mapping_file_path
+
+    def get_mapping_file(self):
+        return self.mapping_file_path
 
     def _get_total_fields(self) -> Union[int, List[int]]:
 
@@ -404,8 +416,8 @@ class Obfuscation(object):
                         # Get only the smali files that are not part of known third
                         # party libraries.
                         if not any(
-                            relative_smali_file.startswith(lib)
-                            for lib in libs_to_ignore
+                                relative_smali_file.startswith(lib)
+                                for lib in libs_to_ignore
                         ):
                             filtered_smali_files.append(smali_file)
 
@@ -418,14 +430,14 @@ class Obfuscation(object):
                 # Check if multidex.
                 if self.is_bundle:
                     if os.path.isdir(
-                        os.path.join(
-                            self._decoded_apk_path, "base", "dex", "smali_classes2"
-                        )
+                            os.path.join(
+                                self._decoded_apk_path, "base", "dex", "smali_classes2"
+                            )
                     ):
                         self._is_multidex = True
                 else:
                     if os.path.isdir(
-                        os.path.join(self._decoded_apk_path, "smali_classes2")
+                            os.path.join(self._decoded_apk_path, "smali_classes2")
                     ):
                         self._is_multidex = True
 
@@ -501,7 +513,7 @@ class Obfuscation(object):
                 ]
             else:
                 self._remaining_fields_per_obfuscator = (
-                    remaining_fields // self.obfuscators_adding_fields
+                        remaining_fields // self.obfuscators_adding_fields
                 )
         else:
             self._remaining_fields_per_obfuscator = remaining_fields
@@ -532,7 +544,7 @@ class Obfuscation(object):
                 ]
             else:
                 self._remaining_methods_per_obfuscator = (
-                    remaining_methods // self.obfuscators_adding_methods
+                        remaining_methods // self.obfuscators_adding_methods
                 )
         else:
             self._remaining_methods_per_obfuscator = remaining_methods
@@ -547,6 +559,40 @@ class Obfuscation(object):
         # The obfuscated apk will be built with apktool or BundleDecompiler.
         apktool: Apktool = Apktool()
         bundledecompiler: BundleDecompiler = BundleDecompiler()
+
+        if self._is_multidex:
+            # mkdir another smali directory and copy android directory to it
+            id = len(self._multidex_smali_files) + 1
+            new_d = os.path.join(self._decoded_apk_path, "smali_classes")
+            for i in range(0, id - 1):
+                if i == 0:
+                    dir_p = 'smali'
+                else:
+                    dir_p = 'smali_classes' + str(i + 1)
+                new_dir = new_d + str(id + i)
+                # else:
+                #     new_dir = new_d + str(id + 1)
+                if not os.path.isdir(new_dir):
+                    os.mkdir(new_dir)
+                files = self._multidex_smali_files[i]
+                for file in files[0: int(len(files) * 0.5)]:
+                    _dir, name = os.path.split(file)
+                    target_d = os.path.join(new_dir, _dir[_dir.find(dir_p) + len(dir_p) + 1:])
+                    if not os.path.isdir(target_d):
+                        os.makedirs(target_d)
+                    shutil.move(file, target_d)
+        else:
+            dir_p = 'smali'
+            new_dir = os.path.join(self._decoded_apk_path, "smali_classes2")
+            if not os.path.isdir(new_dir):
+                os.mkdir(new_dir)
+            files = self._smali_files
+            for file in files[0: int(len(files) * 0.5)]:
+                _dir, name = os.path.split(file)
+                target_d = os.path.join(new_dir, _dir[_dir.find(dir_p) + len(dir_p) + 1:])
+                if not os.path.isdir(target_d):
+                    os.makedirs(target_d)
+                shutil.move(file, target_d)
 
         try:
             if self.is_bundle:
@@ -568,7 +614,7 @@ class Obfuscation(object):
         apksigner: ApkSigner = ApkSigner()
 
         # If a custom keystore file is not provided, use the default one bundled with
-        # the tool. Otherwise check that the keystore password and a key alias are
+        # the tool. Otherwise, check that the keystore password and a key alias are
         # provided along with the custom keystore.
         if not self.keystore_file:
             self.keystore_file = os.path.join(
@@ -684,6 +730,7 @@ class Obfuscation(object):
         ignore_package_list = []
 
         if self.ignore_packages_file is None:
+            ignore_package_list.append('Landroid')
             return ignore_package_list
 
         # Normalize package names into smali format.

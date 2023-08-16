@@ -33,6 +33,8 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
 
         # Will be populated before running the class rename obfuscator.
         self.class_name_to_smali_file: dict = {}
+        self.keyList = ['public', 'private','final','protect','static']
+
 
     def encrypt_identifier(self, identifier: str) -> str:
         identifier_md5 = util.get_string_md5(identifier)
@@ -193,6 +195,14 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                         and string_match.group("string_value")
                         in dot_rename_transformations
                     ):
+                        s = string_match.group("string_value")
+                        ig = False
+                        for x in self.keyList:
+                            if s in x:
+                                ig = True
+                                break
+                        if ig:
+                            continue
                         line = line.replace(
                             string_match.group("string_value"),
                             dot_rename_transformations[
@@ -321,7 +331,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                 for file_name in file_names
                 if file_name.endswith(".xml")
                 and (
-                    "layout" in root or "xml" in root
+                        "layout" in root or "xml" in root
                 )  # Only res/layout-*/ and res/xml-*/ folders.
             )
             xml_files.add(obfuscation_info.get_manifest_file())
@@ -361,6 +371,12 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                 class_rename_transformations,
                 obfuscation_info.interactive,
             )
+
+            # record the renamed classes
+            class_obj_map_origin :dict= {}
+            for origin,obj in class_rename_transformations.items():
+                class_obj_map_origin[obj] = origin
+            obfuscation_info.class_obj_map_origin = class_obj_map_origin
 
         except Exception as e:
             self.logger.error(

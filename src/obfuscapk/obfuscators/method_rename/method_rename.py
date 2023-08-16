@@ -22,18 +22,20 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
         return "m{0}".format(method_md5.lower()[:8])
 
     def rename_method_declarations(
-        self,
-        smali_files: List[str],
-        class_names_to_ignore: Set[str],
-        interactive: bool = False,
-    ) -> Set[str]:
+            self,
+            smali_files: List[str],
+            class_names_to_ignore: Set[str],
+            class_obj_map_origin: dict,
+            interactive: bool = False,
+    ):
         renamed_methods: Set[str] = set()
+        renamed_methods_map: dict = {}
 
         # Search for method definitions that can be renamed.
         for smali_file in util.show_list_progress(
-            smali_files,
-            interactive=interactive,
-            description="Renaming method declarations",
+                smali_files,
+                interactive=interactive,
+                description="Renaming method declarations",
         ):
             with util.inplace_edit_file(smali_file) as (in_file, out_file):
 
@@ -55,10 +57,10 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                         elif class_match:
                             class_name = class_match.group("class_name")
                             if (
-                                class_name in class_names_to_ignore
-                                or class_name.startswith(
-                                    tuple(self.ignore_package_names)
-                                )
+                                    class_name in class_names_to_ignore
+                                    or class_name.startswith(
+                                tuple(self.ignore_package_names)
+                            )
                             ):
                                 # The methods of this class should be ignored when
                                 # renaming, so proceed with the next class.
@@ -78,11 +80,11 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
 
                     # Avoid constructors, native and abstract methods.
                     if (
-                        method_match
-                        and "<init>" not in line
-                        and "<clinit>" not in line
-                        and " native " not in line
-                        and " abstract " not in line
+                            method_match
+                            and "<init>" not in line
+                            and "<clinit>" not in line
+                            and " native " not in line
+                            and " abstract " not in line
                     ):
                         method = "{method_name}({method_param}){method_return}".format(
                             method_name=method_match.group("method_name"),
@@ -92,14 +94,19 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                         # Rename method declaration (invocations of this method will be
                         # renamed later).
                         method_name = method_match.group("method_name")
+                        new_method_name = self.rename_method(method_name)
                         out_file.write(
                             line.replace(
                                 "{0}(".format(method_name),
-                                "{0}(".format(self.rename_method(method_name)),
+                                "{0}(".format(new_method_name),
                             )
                         )
                         # Direct methods cannot be overridden, so they can be called
                         # only by the same class that declares them.
+                        class_name_trip = class_name[1:-1].replace("/",".")
+                        origin_class = class_obj_map_origin.get(class_name)[1:-1].replace("/",".")
+                        renamed_methods_map['{0}::{1}'.format(origin_class, method_name)] = \
+                            "{0}::{1}".format(class_name_trip, new_method_name)
                         renamed_methods.add(
                             "{class_name}->{method}".format(
                                 class_name=class_name, method=method
@@ -108,18 +115,18 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                     else:
                         out_file.write(line)
 
-        return renamed_methods
+        return renamed_methods, renamed_methods_map
 
     def rename_method_invocations(
-        self,
-        smali_files: List[str],
-        methods_to_rename: Set[str],
-        interactive: bool = False,
+            self,
+            smali_files: List[str],
+            methods_to_rename: Set[str],
+            interactive: bool = False,
     ):
         for smali_file in util.show_list_progress(
-            smali_files,
-            interactive=interactive,
-            description="Renaming method invocations",
+                smali_files,
+                interactive=interactive,
+                description="Renaming method invocations",
         ):
             with util.inplace_edit_file(smali_file) as (in_file, out_file):
                 for line in in_file:
@@ -142,7 +149,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                         # here we have a list of methods whose declarations were already
                         # renamed.
                         if (
-                            "direct" in invoke_type or "static" in invoke_type
+                                "direct" in invoke_type or "static" in invoke_type
                         ) and method in methods_to_rename:
                             method_name = invoke_match.group("invoke_method")
                             out_file.write(
@@ -168,10 +175,11 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
             # renamed.
 
             android_class_names: Set[str] = set(util.get_android_class_names())
-
-            renamed_methods: Set[str] = self.rename_method_declarations(
+            class_obj_map_origin: dict = obfuscation_info.class_obj_map_origin
+            renamed_methods, renamed_methods_map = self.rename_method_declarations(
                 obfuscation_info.get_smali_files(),
                 android_class_names,
+                class_obj_map_origin,
                 obfuscation_info.interactive,
             )
 
@@ -180,6 +188,12 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                 renamed_methods,
                 obfuscation_info.interactive,
             )
+            obfuscation_info.method_size = len(renamed_methods)
+
+            # write the renaming mapping into the mapping file
+            with open(obfuscation_info.get_mapping_file(), 'w', encoding="utf-8") as f:
+                for k, v in renamed_methods_map.items():
+                    f.write(f'{k} -> {v}\n')
 
         except Exception as e:
             self.logger.error(

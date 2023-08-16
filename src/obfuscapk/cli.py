@@ -117,6 +117,14 @@ def get_cmd_args(args: list = None):
         help="The file containing the package names to be ignored during the "
         "obfuscation (one package name per line)",
     )
+
+    parser.add_argument(
+        "--output-mapping-file",
+        type=str,
+        metavar="OUTPUT_MAPPING_FILE",
+        help="The file where to save the obfuscation mapping (one mapping per line)",
+    )
+
     return parser.parse_args(args)
 
 
@@ -168,6 +176,9 @@ def main():
     if arguments.ignore_packages_file:
         arguments.ignore_packages_file = arguments.ignore_packages_file.strip(" '\"")
 
+    if arguments.output_mapping_file:
+        arguments.output_mapping_file = arguments.output_mapping_file.strip(" '\"")
+
     perform_obfuscation(
         arguments.apk_file,
         arguments.obfuscator,
@@ -182,6 +193,7 @@ def main():
         arguments.key_password,
         arguments.ignore_packages_file,
         arguments.use_aapt2,
+        arguments.output_mapping_file
     )
 
 
